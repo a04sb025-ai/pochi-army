@@ -12,7 +12,7 @@
 <canvas id="game"></canvas>
 <div class="hud"><span class="pill" id="stage">🌳 1-1</span><span class="pill" id="score">⭐ 0</span><span class="pill" id="army">🐾 8</span><span class="pill" id="power">🔫 新兵隊</span></div>
 <div class="tip hidden" id="tip">👆 左右にスワイプ！</div>
-<div class="overlay" id="overlay"><div class="card"><h1>ポチ軍団</h1><p>増えるほど軍団が進化！<br>運ではなく判断力でボスを倒せ！</p><button id="start">🐾 ポチッと出撃！</button></div></div>
+<div class="overlay" id="overlay"><div class="card"><h1>ポチ軍団</h1><p>増えるほど軍団が進化！<br>狙って撃って、ゲートを見極めろ！</p><button id="start">🐾 ポチッと出撃！</button></div></div>
 <script>
 const c=document.querySelector('#game'),x=c.getContext('2d'),scoreEl=document.querySelector('#score'),armyEl=document.querySelector('#army'),powerEl=document.querySelector('#power'),stageEl=document.querySelector('#stage'),ov=document.querySelector('#overlay'),tip=document.querySelector('#tip');
 const STAGES=[
@@ -58,22 +58,34 @@ function spawnWave(){
  const pair=++gatePair,choices=makeChoices(kind);gates.push({x:.25,y:-.58,type:choices[0][0],n:choices[0][1],hit:false,pair},{x:.75,y:-.58,type:choices[1][0],n:choices[1][1],hit:false,pair});
 }
 function spawnBoss(){
- const st=STAGES[stage],speed=.024+stage*.004,duration=(.72-(-.18))/speed,hp=combatDps(st.requiredArmy)*duration*.95;
- boss={x:.5,y:-.18,hp,max:hp,speed};stageEl.textContent=st.icon+' BOSS';tip.textContent='👹 ボス接近！';tip.classList.remove('hidden');setTimeout(()=>tip.classList.add('hidden'),1000);
+ const st=STAGES[stage],speed=.024+stage*.004,duration=(.72-(-.18))/speed,hp=combatDps(st.requiredArmy)*duration*.70;
+ boss={x:.5,y:-.18,hp,max:hp,speed,t:0};stageEl.textContent=st.icon+' BOSS';tip.textContent='👹 狙ってボスを撃て！';tip.classList.remove('hidden');setTimeout(()=>tip.classList.add('hidden'),1100);
 }
 function input(e){const r=c.getBoundingClientRect();px=Math.max(.1,Math.min(.9,(e.clientX-r.left)/r.width))}c.onpointerdown=e=>{pointer=true;input(e)};c.onpointermove=e=>{if(pointer)input(e)};onpointerup=()=>pointer=false;document.querySelector('#start').onclick=reset;
 function loop(t){if(!playing)return;const dt=Math.min((t-last)/1000,.04);last=t;update(dt);draw();requestAnimationFrame(loop)}
 function update(dt){
  if(Math.random()<dt*fireRate()){const r=rank(),spread=spreadFor(army);for(let i=0;i<spread;i++)shots.push({x:px+(i-(spread-1)/2)*.018,y:.72,p:firePower()/Math.sqrt(spread),r})}
- shots.forEach(s=>s.y-=dt*(1.35+s.r*.04));shots=shots.filter(s=>s.y>-.1);
+ shots.forEach(s=>s.y-=dt*(1.35+s.r*.04));shots=shots.filter(s=>s.y>-.1&&s.p>0);
  enemies.forEach(e=>e.y+=dt*(.15+stage*.006+wave*.0007));gates.forEach(g=>g.y+=dt*.2);
- for(const s of shots){let target=null,best=1e9;for(const e of enemies)if(e.hp>0){const dy=s.y-e.y;if(dy>=-.1&&dy<best){target=e;best=dy}}if(target&&s.p>0){s.x+=(target.x-s.x)*Math.min(1,dt*7);if(Math.abs(s.y-target.y)<.09){target.hp-=s.p;s.p=0;if(target.hp<=0){score+=Math.round(25+target.max*8);burst(target.x,target.y,'#ffd52e')}}}}
- for(const e of enemies)if(e.hp>0&&e.y>=.76){finish(false,'敵が突破した！ 強化が足りない！');return}
+ for(const s of shots){
+  if(s.p<=0)continue;
+  for(const e of enemies){
+   if(e.hp<=0)continue;
+   const hitX=.055+s.r*.006,hitY=.055+s.r*.004;
+   if(Math.abs(s.x-e.x)<hitX&&Math.abs(s.y-e.y)<hitY){e.hp-=s.p;s.p=0;if(e.hp<=0){score+=Math.round(25+e.max*8);burst(e.x,e.y,'#ffd52e')}break}
+  }
+ }
+ for(const e of enemies)if(e.hp>0&&e.y>=.76){finish(false,'敵が突破した！ 狙って倒せ！');return}
  enemies=enemies.filter(e=>e.hp>0&&e.y<1.1);
  for(const g of gates)if(!g.hit&&g.y>.72&&g.y<.84&&Math.abs(px-g.x)<.17){applyGate(g);burst(g.x,g.y,(g.type==='-'||g.type==='÷')?'#ff4b55':g.type==='+'?'#32c8ff':'#ffb21a');for(const o of gates)if(o.pair===g.pair)o.hit=true;break}
  gates=gates.filter(g=>!g.hit&&g.y<1.1);particles.forEach(p=>{p.y+=p.vy*dt;p.x+=p.vx*dt;p.life-=dt});particles=particles.filter(p=>p.life>0);
  if(!boss&&enemies.length===0&&gates.length===0){if(wave<STAGES[stage].pattern.length)spawnWave();else spawnBoss()}
- if(boss){boss.y+=dt*boss.speed;boss.hp-=combatDps(army)*dt;if(boss.hp<=0){score+=1000*(stage+1)+army*8;completeStage();return}if(boss.y>=.72){finish(false,'ボスが軍団まで到達した！');return}}
+ if(boss){
+  boss.t+=dt;boss.y+=dt*boss.speed;boss.x=.5+Math.sin(boss.t*(1.35+stage*.12))*(.08+stage*.025);
+  for(const s of shots){if(s.p>0&&Math.abs(s.x-boss.x)<.145&&Math.abs(s.y-boss.y)<.105){boss.hp-=s.p;s.p=0;burst(boss.x,boss.y,'#fff36b',2)}}
+  if(boss.hp<=0){score+=1000*(stage+1)+army*8;completeStage();return}
+  if(boss.y>=.72){finish(false,'ボスが軍団まで到達した！');return}
+ }
  scoreEl.textContent='⭐ '+Math.floor(score);armyEl.textContent='🐾 '+army.toLocaleString();powerEl.textContent='🔫 '+rankName();
 }
 function completeStage(){playing=false;if(stage<STAGES.length-1){const done=STAGES[stage];stage++;ov.style.display='grid';ov.innerHTML=`<div class="card"><h1>${done.icon} 突破！</h1><p>🐾 ${army.toLocaleString()}体<br>🔫 ${rankName()} / 火力 ${firePower().toFixed(1)}倍<br>判断ミス ${mistakes}回<br>${STAGES[stage].icon} ${STAGES[stage].name}へ！</p><button onclick="startStage()">次のステージへ！</button></div>`}else finish(true,'3ステージ完全制覇！')}
